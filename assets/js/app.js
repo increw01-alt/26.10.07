@@ -52,10 +52,15 @@
   var undoSnapshot = null;
 
   /* ---------- 프롬프트 조립 ---------- */
+  function splitRoles(text) {
+    return (text || '').split(/\s*\/\s*/).map(function (t) { return t.trim(); }).filter(Boolean);
+  }
   function roleSentence(role) {
     var r = (role || '').trim();
     if (!r) return '';
     if (/입니다|이다\.?$|이에요|예요|당신은|너는|^you are/i.test(r)) return r;
+    var parts = splitRoles(r);
+    if (parts.length > 1) r = parts.slice(0, -1).join(', ') + '이자 ' + parts[parts.length - 1];
     return '당신은 ' + r + '입니다.';
   }
   function toBullets(text) {
@@ -303,9 +308,13 @@
       var lines = toBullets(state.fields[k]).map(function (l) { return l.replace(/^- /, ''); });
       $$('[data-chips="' + k + '"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', lines.indexOf(c.getAttribute('data-value')) >= 0 ? 'true' : 'false'); });
     });
-    ['role', 'audience'].forEach(function (k) {
-      $$('[data-chips="' + k + '"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', (state.fields[k] || '').trim() === c.getAttribute('data-value') ? 'true' : 'false'); });
+    var roles = splitRoles(state.fields.role);
+    $$('[data-chips="role"] .chip[data-value]').forEach(function (c) {
+      var on = roles.indexOf(c.getAttribute('data-value')) >= 0;
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on && c.classList.contains('chip-extra')) c.hidden = false;
     });
+    $$('[data-chips="audience"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', (state.fields.audience || '').trim() === c.getAttribute('data-value') ? 'true' : 'false'); });
   }
 
   /* ---------- 렌더 ---------- */
@@ -451,6 +460,19 @@
     $('#tplCats').innerHTML = D.categories.map(function (c) {
       return '<button type="button" class="chip" data-cat="' + esc(c) + '" aria-pressed="' + (c === tplFilter.cat ? 'true' : 'false') + '">' + esc(c) + '</button>';
     }).join('');
+  }
+  var ROLE_VISIBLE = 8;
+  function renderRoleChips() {
+    var box = $('#roleChips');
+    if (!box) return;
+    var list = D.chips.role || [];
+    box.innerHTML = list.map(function (pair, i) {
+      return '<button type="button" class="chip' + (i >= ROLE_VISIBLE ? ' chip-extra' : '') + '" data-value="' + esc(pair[1]) + '" title="' + esc(pair[1]) + '" aria-pressed="false"' + (i >= ROLE_VISIBLE ? ' hidden' : '') + '>' + esc(pair[0]) + '</button>';
+    }).join('');
+    if (list.length > ROLE_VISIBLE) {
+      var label = '더 보기 +' + (list.length - ROLE_VISIBLE);
+      box.insertAdjacentHTML('beforeend', '<button type="button" class="chip chip-more" data-more data-label-more="' + label + '" aria-label="역할 더 보기">' + label + '</button>');
+    }
   }
   function renderQuickstart() {
     var box = $('#quickChips');
@@ -706,7 +728,15 @@
 
     // 추천 칩
     document.addEventListener('click', function (e) {
-      var chip = e.target.closest('[data-chips] .chip');
+      var moreBtn = e.target.closest('[data-chips] [data-more]');
+      if (moreBtn) {
+        var box = moreBtn.closest('[data-chips]'), expanded = box.getAttribute('data-expanded') === '1';
+        $$('.chip-extra', box).forEach(function (c) { c.hidden = expanded && c.getAttribute('aria-pressed') !== 'true'; });
+        box.setAttribute('data-expanded', expanded ? '0' : '1');
+        moreBtn.textContent = expanded ? moreBtn.getAttribute('data-label-more') : '접기';
+        return;
+      }
+      var chip = e.target.closest('[data-chips] .chip[data-value]');
       if (chip) {
         var group = chip.closest('[data-chips]').getAttribute('data-chips'), val = chip.getAttribute('data-value');
         readForm();
@@ -714,6 +744,10 @@
           var tones = (state.fields.tone || '').split(/[,，/]/).map(function (t) { return t.trim(); }).filter(Boolean);
           var i = tones.indexOf(val); if (i >= 0) tones.splice(i, 1); else tones.push(val);
           state.fields.tone = tones.join(', ');
+        } else if (group === 'role') {
+          var roles = splitRoles(state.fields.role);
+          var ri = roles.indexOf(val); if (ri >= 0) roles.splice(ri, 1); else roles.push(val);
+          state.fields.role = roles.join(' / ');
         } else if (group === 'constraints' || group === 'success') {
           var lines = toBullets(state.fields[group]).map(function (l) { return l.replace(/^- /, ''); });
           var j = lines.indexOf(val); if (j >= 0) lines.splice(j, 1); else lines.push(val);
@@ -801,6 +835,7 @@
   function init() {
     cacheDom();
     initTheme();
+    renderRoleChips();
     renderQuickstart();
     renderTemplateCats();
     renderTemplates();
