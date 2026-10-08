@@ -19,31 +19,44 @@
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (가장 저렴)', effort: false, fallbacks: false }
   ];
   var KEY_STORE = 'pw.ai.key', MODEL_STORE = 'pw.ai.model';
-  var EDITABLE = ['task', 'role', 'context', 'audience', 'constraints', 'formatExtra', 'tone', 'examples'];
+  var EDITABLE = ['task', 'success', 'role', 'context', 'audience', 'constraints', 'formatExtra', 'tone', 'examples'];
 
   var provider = null;   // { kind: 'sample', sample } 또는 { kind: 'direct' }
   var controller = null;
 
-  /* ---------- 프롬프트 ---------- */
-  var SYSTEM = '당신은 프롬프트 엔지니어입니다. 사용자가 AI에게 보낼 프롬프트의 각 항목을 더 구체적이고 실행 가능하게 다듬습니다. 사용자가 적지 않은 사실(수치, 회사명, 실적, 날짜)은 절대 지어내지 않습니다.';
+  /* ---------- 프롬프트 ----------
+     GitHub의 prompt-engineering 스킬(PhAlves23, MIT)의 5단계 워크플로우와 황금률,
+     Anthropic 'Prompting best practices'를 바탕으로 작성했습니다. */
+  var SYSTEM = '당신은 프롬프트 엔지니어입니다. 사용자가 AI에게 보낼 프롬프트의 각 항목을 검증된 프롬프트 엔지니어링 기법(Anthropic 프롬프트 작성 가이드, The Prompt Report의 기법 분류)에 따라 더 구체적이고 실행 가능하게 다듬습니다. 사용자가 적지 않은 사실(수치, 회사명, 실적, 날짜, 이름)은 절대 지어내지 않습니다.';
   function buildInput(st) {
     var f = st.fields, subset = {};
     EDITABLE.forEach(function (k) { subset[k] = f[k] || ''; });
     var extra = [];
-    if ((f.material || '').trim()) extra.push('입력 자료: 있음 (' + f.material.length + '자, 수정 대상 아님)');
+    if ((f.material || '').trim()) extra.push('입력 자료: 있음 (' + f.material.length + '자, 수정 대상 아님, 프롬프트에서 자동으로 태그로 구분됨)');
     if (f.format && f.format !== 'free') extra.push('선택된 출력 형식: ' + f.format);
     if (f.length && f.length !== 'any') extra.push('선택된 분량: ' + f.length);
+    var proc = Object.keys(st.process || {}).filter(function (k) { return st.process[k]; });
+    if (proc.length) extra.push('선택된 진행 방식 옵션: ' + proc.join(', ') + ' (별도 항목으로 자동 삽입됨)');
     return SYSTEM + '\n\n' +
+      '작업 순서:\n' +
+      '1. 진단: 실제 의도, 작업 유형(분류·추출·글쓰기·코딩·분석·리서치·요약·대화 중 하나), 읽는 사람, 출력 형식, 초안의 약점을 파악합니다. 약점 예: 모호한 표현, 결과물 종류·수량 없음, 범위 불명확, 부정문 위주의 지시, 이유 없는 지시, 성공 기준 없음, 형식 미지정, 예시 부족.\n' +
+      '2. 기법 선택: 작업 유형에 실제로 도움이 되는 기법만 고릅니다. 단순한 작업에 기법을 덧붙여 부풀리지 마세요.\n' +
+      '3. 재작성: 각 항목을 다시 씁니다. 역할은 분야와 경력이 구체적인 한 줄, 작업은 결과물·수량·목표가 드러나게, 배경은 상황과 이유, 제약은 긍정문 목록, 성공 기준은 검증 가능한 한 문장.\n' +
+      '4. 자기 검토: 맥락이 없는 동료가 읽어도 바로 실행할 수 있는지, 범위가 명확한지(예: "첫 항목만이 아니라 모든 항목에"), 긍정문인지, 당연하지 않은 지시에 이유가 있는지 확인합니다.\n\n' +
       '규칙:\n' +
-      '1. 사용자가 적지 않은 사실(수치, 회사명, 실적, 날짜, 이름)을 지어내지 마세요. 꼭 필요한 정보가 비어 있으면 {{변수명}} 형태의 자리표시자로 남기세요.\n' +
-      '2. "잘", "좀", "적당히" 같은 모호한 표현은 측정 가능한 기준으로 바꾸세요.\n' +
-      '3. 비어 있는 항목은 프롬프트 품질에 꼭 필요할 때만 짧게 채우고, 나머지는 빈 문자열로 두세요.\n' +
-      '4. 항목의 의미와 사용자의 의도는 유지하고, 한국어로 작성하세요. constraints는 한 줄에 하나씩 "- "로 시작하는 목록으로 쓰세요.\n' +
-      '5. 응답은 JSON 객체 하나만 출력하세요. 설명 문장이나 코드 펜스를 붙이지 마세요.\n\n' +
+      '- 사용자가 적지 않은 사실을 지어내지 마세요. 꼭 필요한 정보가 비어 있으면 {{변수명}} 자리표시자로 남기고, 원본에 있던 {{변수}}는 그대로 보존하세요.\n' +
+      '- "잘", "좀", "적당히" 같은 모호한 표현은 측정 가능한 기준으로 바꾸세요.\n' +
+      '- "~하지 마세요"는 원하는 행동을 적는 긍정문으로 바꾸세요. 당연하지 않은 지시에는 이유를 한 구절 덧붙이세요.\n' +
+      '- success(성공 기준)가 비어 있으면 작업 내용으로부터 검증 가능한 한 문장을 만들어 채우세요. 그 외 비어 있는 항목은 꼭 필요할 때만 짧게 채우고, 나머지는 빈 문자열로 두세요.\n' +
+      '- constraints는 한 줄에 하나씩 "- "로 시작하는 2~5줄 목록으로 쓰세요. 강한 명령어(반드시, 절대, CRITICAL)와 심리적 압박 표현은 쓰지 마세요.\n' +
+      '- examples는 있을 때만 다듬고, 없으면 지어내지 말고 빈 문자열로 두세요.\n' +
+      '- 이미 충분히 좋은 항목은 바꾸지 말고 notes에 그렇게 적으세요. "다르지만 더 낫지 않은" 변경은 하지 마세요.\n' +
+      '- 한국어로 작성하고 사용자의 의도와 말투 수준을 유지하세요.\n' +
+      '- 응답은 JSON 객체 하나만 출력하세요. 설명 문장이나 코드 펜스를 붙이지 마세요.\n\n' +
       '현재 항목(JSON):\n' + JSON.stringify(subset, null, 2) + '\n\n' +
       (extra.length ? '참고:\n- ' + extra.join('\n- ') + '\n\n' : '') +
       '응답 형식(키는 그대로, 값은 문자열):\n' +
-      '{"fields": {"task": "...", "role": "...", "context": "...", "audience": "...", "constraints": "...", "formatExtra": "...", "tone": "...", "examples": "..."}, "notes": ["무엇을 왜 바꿨는지 한 줄", "..."]}';
+      '{"fields": {"task": "...", "success": "...", "role": "...", "context": "...", "audience": "...", "constraints": "...", "formatExtra": "...", "tone": "...", "examples": "..."}, "notes": ["적용한 기법과 고친 이유 한 줄", "..."], "assumptions": ["가정했거나 사용자 확인이 필요한 점 (없으면 빈 배열)"]}';
   }
   function parseLoose(text) {
     if (typeof text !== 'string') return text;
@@ -60,7 +73,8 @@
     var fields = {};
     EDITABLE.forEach(function (k) { var v = result.fields[k]; if (typeof v === 'string') fields[k] = v.trim(); });
     var notes = Array.isArray(result.notes) ? result.notes.filter(function (n) { return typeof n === 'string' && n.trim(); }).slice(0, 8) : [];
-    return { fields: fields, notes: notes };
+    var assumptions = Array.isArray(result.assumptions) ? result.assumptions.filter(function (n) { return typeof n === 'string' && n.trim(); }).slice(0, 5) : [];
+    return { fields: fields, notes: notes, assumptions: assumptions };
   }
 
   /* ---------- 실행 ---------- */
@@ -125,6 +139,7 @@
     var body = document.createElement('div');
     var html = '';
     if (result.notes.length) html += '<div><strong>바뀐 점</strong><ul class="ai-notes">' + result.notes.map(function (n) { return '<li>' + PW.esc(n) + '</li>'; }).join('') + '</ul></div>';
+    if (result.assumptions && result.assumptions.length) html += '<div><strong>가정 · 확인할 점</strong><ul class="ai-notes">' + result.assumptions.map(function (n) { return '<li>' + PW.esc(n) + '</li>'; }).join('') + '</ul></div>';
     var changed = EDITABLE.filter(function (k) { return result.fields[k] !== undefined && result.fields[k] !== (st.fields[k] || '').trim(); });
     if (!changed.length) html += '<p>바꿀 부분을 찾지 못했어요. 이미 충분히 구체적인 프롬프트예요.</p>';
     changed.forEach(function (k) {

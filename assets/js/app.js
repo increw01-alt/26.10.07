@@ -31,8 +31,8 @@
   function icon(name, cls) { return '<svg class="ic ' + (cls || '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>'; }
 
   /* ---------- 상수 ---------- */
-  var FIELD_KEYS = ['task', 'role', 'context', 'audience', 'material', 'constraints', 'format', 'length', 'formatExtra', 'tone', 'examples', 'language'];
-  var FIELD_LABELS = { task: '작업', role: '역할', context: '배경', audience: '대상 독자', material: '입력 자료', constraints: '제약 조건', format: '출력 형식', length: '분량', formatExtra: '형식 추가 지시', tone: '톤과 스타일', examples: '예시', language: '답변 언어' };
+  var FIELD_KEYS = ['task', 'success', 'role', 'context', 'audience', 'material', 'constraints', 'format', 'length', 'formatExtra', 'tone', 'examples', 'language'];
+  var FIELD_LABELS = { task: '작업', success: '성공 기준', role: '역할', context: '배경', audience: '대상 독자', material: '입력 자료', constraints: '제약 조건', format: '출력 형식', length: '분량', formatExtra: '형식 추가 지시', tone: '톤과 스타일', examples: '예시', language: '답변 언어' };
   var PROCESS_KEYS = Object.keys(D.process);
   var VAR_RE = /\{\{\s*([^{}\n]+?)\s*\}\}/g;
   var VAGUE = ['좀', '잘', '대충', '적당히', '알아서', '뭔가', '그냥', '괜찮게', '멋지게', '이쁘게', '예쁘게', '느낌있게', '센스있게', '쩔게', '최대한'];
@@ -40,12 +40,12 @@
   var VAGUE_RE = new RegExp('(^|' + BOUNDARY + ')(' + VAGUE.join('|') + ')(?=$|' + BOUNDARY + ')', 'g');
   var DELIV = ['글', '기사', '포스트', '카피', '문구', '제목', '슬로건', '이메일', '메일', '요약', '분석', '번역', '코드', '함수', '컴포넌트', '페이지', '사이트', '스크립트', '표', '목록', '리스트', '계획', '기획', '제안서', '보고서', '초안', '아이디어', '시나리오', '설명', '가이드', '매뉴얼', '질문', '답변', '피드백', '리뷰', '검토', '수정안', '개선안', '비교', '정리', '설계', '디자인', '프롬프트', 'FAQ', '설문', '대본', '광고', '캠페인', '문서', '회의록', '개요', '구조', '전략', '체크리스트', '정의', '예시', '버전', '안을', '문장', '단락', '문단', '요청서', '게시물', '해시태그', '프로그램', '함수를', '쿼리', 'SQL', 'JSON', 'HTML', 'CSS', '수정', '원인'];
   var DELIV_RE = new RegExp(DELIV.map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|'));
-  var SECTION_TITLES = { role: '역할', context: '배경', task: '작업', audience: '대상 독자', material: '입력 자료', constraints: '제약 조건', format: '출력 형식', tone: '톤과 스타일', examples: '예시', process: '진행 방식' };
-  var SECTION_TAGS = { role: 'role', context: 'context', task: 'task', audience: 'audience', material: 'material', constraints: 'constraints', format: 'format', tone: 'tone', examples: 'examples', process: 'process' };
+  var SECTION_TITLES = { role: '역할', context: '배경', task: '작업', success: '성공 기준', audience: '대상 독자', material: '입력 자료', constraints: '제약 조건', format: '출력 형식', tone: '톤과 스타일', examples: '예시', process: '진행 방식' };
+  var SECTION_TAGS = { role: 'role', context: 'context', task: 'task', success: 'success_criteria', audience: 'audience', material: 'documents', constraints: 'constraints', format: 'format', tone: 'tone', examples: 'examples', process: 'process' };
 
   /* ---------- 상태 ---------- */
   function emptyFields() {
-    return { task: '', role: '', context: '', audience: '', material: '', constraints: '', format: 'free', length: 'any', formatExtra: '', tone: '', examples: '', language: 'ko' };
+    return { task: '', success: '', role: '', context: '', audience: '', material: '', constraints: '', format: 'free', length: 'any', formatExtra: '', tone: '', examples: '', language: 'ko' };
   }
   var state = { fields: emptyFields(), process: {}, structure: 'markdown', vars: {}, currentId: null, sampleLoaded: false };
   var lastEval = null;
@@ -63,12 +63,20 @@
       return '- ' + l.replace(/^(?:[-*•·]|\d+[.)])\s*/, '');
     });
   }
+  function exampleBlocks(text) {
+    var t = (text || '').trim();
+    return t ? t.split(/\n\s*\n/).map(function (b) { return b.trim(); }).filter(Boolean) : [];
+  }
+  function examplesBlock(text) {
+    return exampleBlocks(text).map(function (b) { return '<example>\n' + b + '\n</example>'; }).join('\n');
+  }
   function buildSections(f, p) {
     var s = [];
     function push(key, body) { body = (body || '').trim(); if (body) s.push({ key: key, title: SECTION_TITLES[key], tag: SECTION_TAGS[key], body: body }); }
     push('role', roleSentence(f.role));
     push('context', f.context);
     push('task', f.task);
+    push('success', f.success);
     push('audience', f.audience);
     var mat = (f.material || '').trim();
     push('material', mat);
@@ -82,7 +90,7 @@
     push('format', fmt.join('\n'));
     var tones = (f.tone || '').split(/[,，/]/).map(function (t) { return t.trim(); }).filter(Boolean);
     push('tone', tones.length ? tones.join(', ') + ' 톤으로 작성하세요.' : '');
-    push('examples', f.examples);
+    push('examples', examplesBlock(f.examples));
     var proc = PROCESS_KEYS.filter(function (k) { return p && p[k]; }).map(function (k) { return '- ' + D.process[k].text; });
     push('process', proc.join('\n'));
     // 긴 자료는 지시보다 앞에 두는 편이 결과가 좋습니다.
@@ -97,8 +105,12 @@
     if (!sections.length) return '';
     return sections.map(function (sec) {
       var body = sec.body;
+      if (sec.key === 'material') {
+        if (structure === 'xml') return '<documents>\n<document index="1">\n<document_content>\n' + body + '\n</document_content>\n</document>\n</documents>';
+        body = '"""\n' + body + '\n"""';
+        return (structure === 'plain' ? sec.title + ':\n' : '# ' + sec.title + '\n') + body;
+      }
       if (structure === 'xml') return '<' + sec.tag + '>\n' + body + '\n</' + sec.tag + '>';
-      if (sec.key === 'material' && structure === 'markdown') body = '"""\n' + body + '\n"""';
       if (structure === 'plain') return (body.indexOf('\n') >= 0 ? sec.title + ':\n' + body : sec.title + ': ' + body);
       return '# ' + sec.title + '\n' + body;
     }).join('\n\n');
@@ -122,54 +134,78 @@
     while ((m = VAGUE_RE.exec(text || ''))) { if (!seen[m[2]]) { seen[m[2]] = true; hits.push(m[2]); } }
     return hits;
   }
+  var NEG_RE = /(하지\s?마|하지\s?않|금지|말\s?것|말아|않기|않도록|제외|없이)/;
+  var EMPH_RE = /(반드시|절대|무조건|CRITICAL|MUST|IMPORTANT|!!+)/gi;
+  var TRICK_RE = /(심호흡|커리어가\s?달|팁을\s?(줄게|드릴)|보상을\s?(줄게|드릴)|take a deep breath|important to my career)/i;
+  var REQ_END_RE = /(주세요|하세요|해\s?줘|주십시오|바랍니다|부탁해|부탁드립니다)[.!]?(?=\s|$)/g;
+  function countMatches(re, text) { var m = (text || '').match(re); return m ? m.length : 0; }
   function evaluate(f, p, assembled) {
-    var items = [];
-    function add(key, label, weight, earned, status, tip, field) { items.push({ key: key, label: label, weight: weight, earned: earned, status: status, tip: tip, field: field }); }
+    var items = [], penalty = 0;
+    function add(key, label, weight, earned, status, tip, field, prio) {
+      items.push({ key: key, label: label, weight: weight, earned: earned, status: status, tip: tip, field: field, prio: prio == null ? (weight - earned) : prio });
+    }
     var task = (f.task || '').trim();
-    if (task.length >= 15) add('task', '작업 명시', 20, 20, 'ok', '', 'task');
-    else if (task.length) add('task', '작업 명시', 20, 10, 'warn', '작업을 한두 문장 더 자세히 적어주세요. 무엇을, 어떤 결과물로, 왜 필요한지.', 'task');
-    else add('task', '작업 명시', 20, 0, 'miss', '무엇을 원하는지 작업을 적어주세요. 가장 중요한 항목입니다.', 'task');
+    if (task.length >= 15) add('task', '작업 명시', 15, 15, 'ok', '', 'task');
+    else if (task.length) add('task', '작업 명시', 15, 7, 'warn', '작업을 한두 문장 더 자세히 적어주세요. 무엇을, 어떤 결과물로, 왜 필요한지.', 'task');
+    else add('task', '작업 명시', 15, 0, 'miss', '무엇을 원하는지 작업을 적어주세요. 가장 중요한 항목입니다.', 'task');
 
     var vague = findVague(task);
     var hasDeliv = DELIV_RE.test(task), hasNum = /\d/.test(task);
-    var sp = (hasDeliv ? 10 : 0) + (hasNum ? 5 : 0);
-    if (!hasDeliv && hasNum) sp = 8;
-    sp = clamp(sp - vague.length * 3, 0, 15);
+    var sp = (hasDeliv ? 7 : 0) + (hasNum ? 3 : 0);
+    if (!hasDeliv && hasNum) sp = 5;
+    sp = clamp(sp - vague.length * 2, 0, 10);
     var spTip = vague.length ? "'" + vague.join("', '") + "' 같은 표현 대신 기준을 적어주세요. 예: 소제목 5개로, 300자 이내로." : '결과물의 종류와 수량을 적어주세요. 예: 제목 후보 3개, 500자 소개글.';
-    add('specific', '구체성', 15, sp, sp >= 12 ? 'ok' : (sp >= 6 ? 'warn' : 'miss'), spTip, 'task');
+    add('specific', '구체성', 10, sp, sp >= 8 ? 'ok' : (sp >= 4 ? 'warn' : 'miss'), spTip, 'task');
+
+    var suc = (f.success || '').trim();
+    if (suc.length >= 10) add('success', '성공 기준', 10, 10, 'ok', '', 'success');
+    else if (suc.length) add('success', '성공 기준', 10, 5, 'warn', '성공 기준을 한 문장으로 완성해주세요. 어떤 결과가 나오면 성공인지.', 'success');
+    else add('success', '성공 기준', 10, 0, 'miss', '어떤 답이 좋은 답인지 한 문장으로 적어주세요. AI가 스스로 검토하는 기준이 됩니다. 예: 고치지 않고 바로 쓸 수 있으면 성공.', 'success');
 
     var role = (f.role || '').trim();
-    add('role', '역할', 10, role.length >= 2 ? 10 : 0, role.length >= 2 ? 'ok' : 'miss', '역할을 정하면 답변의 관점과 깊이가 달라집니다. 예: 10년 경력의 카피라이터.', 'role');
+    add('role', '역할', 8, role.length >= 2 ? 8 : 0, role.length >= 2 ? 'ok' : 'miss', '역할을 정하면 답변의 관점과 깊이가 달라집니다. 분야와 경력을 구체적으로. 예: 10년 경력의 카피라이터.', 'role');
 
     var ctx = (f.context || '').trim();
-    if (ctx.length >= 40) add('context', '배경', 15, 15, 'ok', '', 'context');
-    else if (ctx.length) add('context', '배경', 15, 8, 'warn', '배경을 2~3문장으로 늘려보세요. 누가, 어떤 상황에서, 왜 필요한지.', 'context');
-    else add('context', '배경', 15, 0, 'miss', '상황을 알려주면 답변이 일반론에서 벗어납니다. 서비스 소개, 현재 상황, 목적을 적어주세요.', 'context');
+    if (ctx.length >= 40) add('context', '배경', 12, 12, 'ok', '', 'context');
+    else if (ctx.length) add('context', '배경', 12, 6, 'warn', '배경을 2~3문장으로 늘려보세요. 누가, 어떤 상황에서, 왜 필요한지. 이유를 알면 AI가 더 잘 일반화합니다.', 'context');
+    else add('context', '배경', 12, 0, 'miss', '상황과 이유를 알려주면 답변이 일반론에서 벗어납니다. 서비스 소개, 현재 상황, 이 결과물이 필요한 이유를 적어주세요.', 'context');
 
     var aud = (f.audience || '').trim();
     add('audience', '대상 독자', 5, aud ? 5 : 0, aud ? 'ok' : 'miss', '결과물을 읽을 사람을 적으면 난이도와 말투가 맞춰집니다.', 'audience');
 
     var hasFmt = (f.format && f.format !== 'free') || (f.length && f.length !== 'any') || (f.formatExtra || '').trim();
-    add('format', '출력 형식', 10, hasFmt ? 10 : 0, hasFmt ? 'ok' : 'miss', '출력 형식과 분량을 정해주세요. 표, 목록, 500자 이내처럼 구체적으로.', 'format');
+    add('format', '출력 형식', 10, hasFmt ? 10 : 0, hasFmt ? 'ok' : 'miss', '출력 계약을 정해주세요. 형식(표, 목록, JSON), 분량, "설명 없이 결과만"처럼 구체적으로.', 'format');
 
-    var cons = toBullets(f.constraints).length;
-    if (cons >= 2) add('constraints', '제약 조건', 10, 10, 'ok', '', 'constraints');
-    else if (cons === 1) add('constraints', '제약 조건', 10, 6, 'warn', '제약 조건을 하나 더 추가해보세요. 금지 사항, 반드시 포함할 것, 언어나 말투.', 'constraints');
-    else add('constraints', '제약 조건', 10, 0, 'miss', '하지 말아야 할 것과 꼭 지킬 것을 적어주세요. 과장 금지, 글자 수, 말투 등.', 'constraints');
+    var consLines = toBullets(f.constraints).map(function (l) { return l.replace(/^- /, ''); });
+    var negCount = consLines.filter(function (l) { return NEG_RE.test(l); }).length;
+    var negHeavy = consLines.length >= 2 && negCount / consLines.length > 0.6;
+    var consBase = consLines.length >= 2 ? 10 : (consLines.length === 1 ? 6 : 0);
+    var consPos = consLines.length ? (negHeavy ? 2 : 5) : 0;
+    var consTip = !consLines.length ? '꼭 지킬 것과 하지 말아야 할 것을 적어주세요. 과장 금지, 글자 수, 말투 등. 당연하지 않은 조건에는 이유를 덧붙이면 더 잘 지켜요.'
+      : negHeavy ? '부정문이 많아요. "~하지 말 것" 대신 원하는 행동을 적어주세요. 예: "마크다운 금지" → "문단형 산문으로 작성".'
+      : consLines.length < 2 ? '제약 조건을 하나 더 추가해보세요. 반드시 포함할 것, 언어나 말투, 길이.' : '';
+    add('constraints', '제약 조건', 15, consBase + consPos, !consLines.length ? 'miss' : (consLines.length < 2 || negHeavy ? 'warn' : 'ok'), consTip, 'constraints');
 
-    var ex = (f.examples || '').trim();
-    add('examples', '예시', 10, ex.length >= 10 ? 10 : 0, ex.length >= 10 ? 'ok' : 'miss', '원하는 결과물 예시를 한 개만 넣어도 품질이 크게 올라갑니다.', 'examples');
+    var exCount = exampleBlocks(f.examples).length;
+    if (exCount >= 2) add('examples', '예시', 10, 10, 'ok', '', 'examples');
+    else if (exCount === 1) add('examples', '예시', 10, 7, 'warn', '예시를 빈 줄로 나눠 2~3개 넣고 서로 다른 경우를 담으면 형식과 톤이 더 정확해져요.', 'examples');
+    else add('examples', '예시', 10, 0, 'miss', '원하는 결과물 예시를 한 개만 넣어도 품질이 크게 올라갑니다. 예시는 자동으로 <example> 태그로 감싸집니다.', 'examples');
 
     var anyProc = PROCESS_KEYS.some(function (k) { return p && p[k]; });
-    add('process', '진행 방식', 5, anyProc ? 5 : 0, anyProc ? 'ok' : 'warn', '진행 방식을 하나 이상 체크해보세요. 불명확하면 질문하기, 자체 점검 등.', 'process');
+    add('process', '진행 방식', 5, anyProc ? 5 : 0, anyProc ? 'ok' : 'warn', '진행 방식을 하나 이상 체크해보세요. 자료가 길면 "먼저 인용", 품질이 중요하면 "초안 → 검토 → 수정본".', 'process');
 
-    var penalty = 0;
-    if (assembled.length > 8000) { penalty = 5; add('length', '길이', 0, 0, 'warn', '프롬프트가 8,000자를 넘습니다. 핵심만 남기거나 자료를 줄여보세요.', 'material'); }
+    var instr = task + '\n' + (f.constraints || '') + '\n' + (f.formatExtra || '');
+    var emph = countMatches(EMPH_RE, instr);
+    if (emph >= 3) { penalty += 3; add('emphasis', '강조 표현', 0, 0, 'warn', '강한 강조 표현(반드시, 절대, MUST)이 ' + emph + '개예요. 최신 모델에는 조건과 이유를 설명하는 편이 더 잘 통하고, 과한 강조는 과잉 반응을 부릅니다.', 'constraints', 6); }
+    if (TRICK_RE.test(instr)) { penalty += 3; add('trick', '심리적 표현', 0, 0, 'warn', '"심호흡", "커리어가 달렸다" 같은 표현은 최신 모델에서 효과가 없거나 역효과예요. 구조와 기준으로 해결하세요.', 'task', 6); }
+    var reqCount = countMatches(REQ_END_RE, task);
+    if (reqCount >= 3) { penalty += 3; add('multi', '요청 개수', 0, 0, 'warn', '요청 문장이 ' + reqCount + '개예요. 한 프롬프트에는 한 작업이 좋아요. 단계를 나누거나 "초안 → 검토 → 수정본" 옵션을 써보세요.', 'task', 5); }
+    if (assembled.length > 8000) { penalty += 5; add('length', '길이', 0, 0, 'warn', '프롬프트가 8,000자를 넘습니다. 핵심만 남기거나 자료를 줄여보세요.', 'material', 5); }
 
     var score = clamp(items.reduce(function (a, it) { return a + it.earned; }, 0) - penalty, 0, 100);
     var band = score >= 85 ? 'great' : score >= 65 ? 'good' : score >= 40 ? 'fair' : 'draft';
     var bandLabel = { great: '훌륭함', good: '좋음', fair: '보통', draft: '초안' }[band];
-    var tips = items.filter(function (it) { return it.status !== 'ok'; }).sort(function (a, b) { return (b.weight - b.earned) - (a.weight - a.earned); }).slice(0, 3);
+    var tips = items.filter(function (it) { return it.status !== 'ok'; }).sort(function (a, b) { return b.prio - a.prio; }).slice(0, 3);
     return { score: score, band: band, bandLabel: bandLabel, items: items, tips: tips, vague: vague };
   }
   function estimateTokens(text) {
@@ -206,7 +242,7 @@
     return text.split('\n').map(function (line) {
       var isHead = false;
       if (structure === 'markdown') isHead = /^# /.test(line);
-      else if (structure === 'xml') isHead = /^<\/?[a-z_]+>$/.test(line);
+      else if (structure === 'xml') isHead = /^<\/?[a-z_]+(?: index="\d+")?>$/.test(line);
       else isHead = titles.some(function (t) { return line.indexOf(t + ':') === 0; });
       if (isHead && structure === 'plain') {
         var i = line.indexOf(':');
@@ -263,8 +299,10 @@
   function syncChips() {
     var tones = (state.fields.tone || '').split(/[,，/]/).map(function (t) { return t.trim(); });
     $$('[data-chips="tone"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', tones.indexOf(c.getAttribute('data-value')) >= 0 ? 'true' : 'false'); });
-    var cons = toBullets(state.fields.constraints).map(function (l) { return l.replace(/^- /, ''); });
-    $$('[data-chips="constraints"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', cons.indexOf(c.getAttribute('data-value')) >= 0 ? 'true' : 'false'); });
+    ['constraints', 'success'].forEach(function (k) {
+      var lines = toBullets(state.fields[k]).map(function (l) { return l.replace(/^- /, ''); });
+      $$('[data-chips="' + k + '"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', lines.indexOf(c.getAttribute('data-value')) >= 0 ? 'true' : 'false'); });
+    });
     ['role', 'audience'].forEach(function (k) {
       $$('[data-chips="' + k + '"] .chip').forEach(function (c) { c.setAttribute('aria-pressed', (state.fields[k] || '').trim() === c.getAttribute('data-value') ? 'true' : 'false'); });
     });
@@ -675,10 +713,10 @@
           var tones = (state.fields.tone || '').split(/[,，/]/).map(function (t) { return t.trim(); }).filter(Boolean);
           var i = tones.indexOf(val); if (i >= 0) tones.splice(i, 1); else tones.push(val);
           state.fields.tone = tones.join(', ');
-        } else if (group === 'constraints') {
-          var lines = toBullets(state.fields.constraints).map(function (l) { return l.replace(/^- /, ''); });
+        } else if (group === 'constraints' || group === 'success') {
+          var lines = toBullets(state.fields[group]).map(function (l) { return l.replace(/^- /, ''); });
           var j = lines.indexOf(val); if (j >= 0) lines.splice(j, 1); else lines.push(val);
-          state.fields.constraints = lines.map(function (l) { return '- ' + l; }).join('\n');
+          state.fields[group] = lines.map(function (l) { return (group === 'constraints' ? '- ' : '') + l; }).join('\n');
         } else {
           state.fields[group] = ((state.fields[group] || '').trim() === val) ? '' : val;
         }
