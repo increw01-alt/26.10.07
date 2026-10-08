@@ -199,7 +199,7 @@
     if (emph >= 3) { penalty += 3; add('emphasis', '강조 표현', 0, 0, 'warn', '강한 강조 표현(반드시, 절대, MUST)이 ' + emph + '개예요. 최신 모델에는 조건과 이유를 설명하는 편이 더 잘 통하고, 과한 강조는 과잉 반응을 부릅니다.', 'constraints', 6); }
     if (TRICK_RE.test(instr)) { penalty += 3; add('trick', '심리적 표현', 0, 0, 'warn', '"심호흡", "커리어가 달렸다" 같은 표현은 최신 모델에서 효과가 없거나 역효과예요. 구조와 기준으로 해결하세요.', 'task', 6); }
     var reqCount = countMatches(REQ_END_RE, task);
-    if (reqCount >= 3) { penalty += 3; add('multi', '요청 개수', 0, 0, 'warn', '요청 문장이 ' + reqCount + '개예요. 한 프롬프트에는 한 작업이 좋아요. 단계를 나누거나 "초안 → 검토 → 수정본" 옵션을 써보세요.', 'task', 5); }
+    if (reqCount >= 4) { penalty += 3; add('multi', '요청 개수', 0, 0, 'warn', '요청 문장이 ' + reqCount + '개예요. 한 프롬프트에는 한 작업이 좋아요. 순서가 있는 단계라면 괜찮지만, 서로 다른 작업이면 나누거나 "초안 → 검토 → 수정본" 옵션을 써보세요.', 'task', 5); }
     if (assembled.length > 8000) { penalty += 5; add('length', '길이', 0, 0, 'warn', '프롬프트가 8,000자를 넘습니다. 핵심만 남기거나 자료를 줄여보세요.', 'material', 5); }
 
     var score = clamp(items.reduce(function (a, it) { return a + it.earned; }, 0) - penalty, 0, 100);
@@ -454,7 +454,8 @@
   }
   function renderQuickstart() {
     var box = $('#quickChips');
-    box.innerHTML = D.templates.slice(0, 6).map(function (t) { return '<button type="button" class="chip" data-use="' + t.id + '">' + esc(t.title) + '</button>'; }).join('');
+    var featured = D.templates.filter(function (t) { return t.featured; });
+    box.innerHTML = (featured.length ? featured : D.templates).slice(0, 6).map(function (t) { return '<button type="button" class="chip" data-use="' + t.id + '">' + esc(t.title) + '</button>'; }).join('');
   }
 
   /* ---------- 보관함 ---------- */
