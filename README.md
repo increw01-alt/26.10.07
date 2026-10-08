@@ -40,12 +40,12 @@ npx serve .
 2. `main` 브랜치에 푸시하면 `.github/workflows/deploy-pages.yml`이 자동 배포
 3. 주소: `https://<계정>.github.io/<저장소>/`
 
-### Cloudflare Pages
-- Framework preset: None
-- Build command: (비움)
-- Build output directory: `/`
+### Cloudflare Pages (현재 운영 중)
+- 주소: https://26-10-07.pages.dev/
+- Framework preset: None, Build command: (비움), Build output directory: `/`
+- `main` 브랜치에 푸시하면 자동으로 다시 배포됩니다.
 
-배포 후 `index.html`의 `canonical`, `og:url`을 실제 주소로 바꾸세요.
+도메인을 바꾸면 `index.html`의 `canonical`, `og:url`도 함께 바꾸세요.
 
 ## AI로 다듬기
 
